@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/banner.svg" alt="A border collie herding three llamas in single file" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.svg">
+    <img src="docs/banner.svg" alt="A border collie herding three llamas in single file" width="100%">
+  </picture>
 </p>
 
 # ollama-gateway
