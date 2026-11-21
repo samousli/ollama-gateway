@@ -322,6 +322,17 @@ class LlamaRouteCase(unittest.TestCase):
             time.sleep(0.1)
         self.assertTrue(rows and rows[-1][1], "no empty run row with a note")
 
+    def test_ollama_compat_endpoints(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.gw_port}/api/version", timeout=10) as r:
+            self.assertEqual(r.status, 200)
+            self.assertIn("version", json.load(r))
+        req = urllib.request.Request(f"http://127.0.0.1:{self.gw_port}/api/show",
+                                     data=json.dumps({"model": "qwen3.6:35b"}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.load(r)
+        self.assertEqual(d["details"]["format"], "gguf")
+
     def test_model_list_uses_client_names(self):
         for path in ("/models", "/v1/models"):
             with urllib.request.urlopen(f"http://127.0.0.1:{self.gw_port}{path}", timeout=10) as r:

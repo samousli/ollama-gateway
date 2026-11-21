@@ -27,6 +27,9 @@ EMBED = urlparse(os.environ.get("EMBED_UPSTREAM", ""))         # a llama.cpp ser
 EMBED_ROUTES = dict(x.split("=", 1) for x in os.environ.get("EMBED_ROUTES", "").split(",") if "=" in x)
 # Ollama model name -> llama.cpp model id. The Ollama names stay authoritative for clients.
 PORT = int(os.environ.get("PORT", "11435"))
+# What /api/version reports. Clients use it to decide whether the server is "Ollama enough"; the API
+# here is the subset they actually call, so a mid-2025 Ollama version is the honest claim.
+OLLAMA_COMPAT = os.environ.get("OLLAMA_COMPAT", "0.12.0")
 RETRIES = int(os.environ.get("RETRIES", "2"))
 RECOVER_WAIT = int(os.environ.get("RECOVER_WAIT", "180"))
 BATCH_MAX_WAIT = int(os.environ.get("BATCH_MAX_WAIT", "600"))
@@ -344,15 +347,21 @@ def ollama_reply(kind, model, text, done, f=None, finish=None, wall=None):
     return out
 
 
+def router_models():
+    """The router's model list, or [] when it cannot be asked. One fetch, shared by everything below."""
+    if not LLAMA.hostname:
+        return []
+    try:
+        c, r = llama_upstream("GET", "/v1/models", None, {}, 10)
+        d = json.loads(r.read() or b"{}"); c.close()
+        return d.get("data") or []
+    except Exception:
+        return []
+
+
 def llama_status(llama_id):
     """The router's view of one model ('loaded', 'loading', 'unloaded', ...), or None if it does not say."""
-    try:
-        c = llama_conn(3)
-        c.request("GET", "/v1/models")
-        d = json.loads(c.getresponse().read() or b"{}"); c.close()
-    except Exception:
-        return None
-    m = next((m for m in d.get("data") or [] if m.get("id") == llama_id), None)
+    m = next((m for m in router_models() if m.get("id") == llama_id), None)
     return ((m or {}).get("status") or {}).get("value")
 
 
@@ -638,12 +647,7 @@ class H(BaseHTTPRequestHandler):
         return self._send_json(200, d)
 
     def _llama_models(self):
-        try:
-            c, r = llama_upstream("GET", "/v1/models", None, {}, 30)
-            d = json.loads(r.read() or b"{}"); c.close()
-            return d.get("data") or []
-        except Exception:
-            return []
+        return router_models()
 
     def _merged_tags(self):
         """Ollama tags (when there is an upstream) plus the llama.cpp models, under the names clients ask for."""
@@ -691,6 +695,24 @@ class H(BaseHTTPRequestHandler):
                 return self._send_json(r.status, {"unloaded": m})
             except Exception as e:
                 return self._send_json(502, {"error": str(e)})
+        if self.path == "/api/version":
+            return self._send_json(200, {"version": OLLAMA_COMPAT})
+        if self.path == "/api/show" and self.command == "POST":
+            n = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(n) if n else b""
+            try:
+                want = json.loads(raw or b"{}").get("model") or json.loads(raw or b"{}").get("name")
+            except Exception:
+                want = None
+            target = ROUTES.get(want, want)
+            m = next((m for m in router_models() if m.get("id") == target), None)
+            if m is None:
+                return self._send_json(404, {"error": f"model {want!r} not found"})
+            return self._send_json(200, {"modelfile": "", "parameters": "", "template": "",
+                                         "details": {"parent_model": "", "format": "gguf", "family": "",
+                                                     "families": [], "parameter_size": "",
+                                                     "quantization_level": ""},
+                                         "model_info": {}, "capabilities": ["completion"]})
         if self.path == "/_queue":
             now = time.time()
             with cv:

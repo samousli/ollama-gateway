@@ -50,6 +50,9 @@ queue and the record keeping too.
 - **Ollama API in, llama.cpp out.** `/api/chat`, `/api/generate` and `/api/embed` are translated in
   both directions, including streaming, JSON-schema output and `think: false`. Models you don't route
   pass through to Ollama unchanged.
+- **The Ollama surface keeps working without Ollama.** `GET /models` and `GET /v1/models` list the
+  routed llama.cpp models under the Ollama names clients ask for, `/api/version` reports
+  `OLLAMA_COMPAT`, and `/api/show` answers for a routed model.
 - **It understands llama.cpp's model loading.** In router mode, `llama-server` answers "Loading
   model" for up to a few minutes while it reads a large GGUF. The gateway waits that out instead of
   failing the call, and the queue shows the job as `loading model`.
@@ -228,10 +231,11 @@ Responses use Ollama's fields (`message.content` or `response`, `done_reason`, `
 `prompt_eval_count`, the durations), filled from llama.cpp's own timings. As with Ollama, `/api/*`
 streams unless the request says `"stream": false`. An empty `/api/generate` prompt, which Ollama
 clients send to preload a model, is answered without generating anything. `/api/tags` and `/api/ps`
-merge both backends. `/v1/*` requests for a routed model are forwarded with the model id rewritten.
+merge both backends. `/v1/*` requests for a routed model are forwarded with the model id rewritten,
+and `GET /models` and `GET /v1/models` list the routed models under the names clients ask for.
 
-Without an Ollama upstream, tags and ps list only llama.cpp models, and other Ollama paths answer
-503.
+Without an Ollama upstream, tags and ps list only llama.cpp models, version reports `OLLAMA_COMPAT`,
+and show returns a minimal entry for a routed model; other Ollama paths answer 503.
 
 ### Configuration
 
@@ -243,6 +247,7 @@ Without an Ollama upstream, tags and ps list only llama.cpp models, and other Ol
 | `EMBED_UPSTREAM` | empty | llama.cpp server started with `--embedding` |
 | `EMBED_ROUTES` | empty | `ollama-name=llama-id` pairs for `/api/embed` |
 | `PORT` | `11435` | listen port |
+| `OLLAMA_COMPAT` | `0.12.0` | the version string `/api/version` reports |
 | `RETRIES` | `2` | retries after an upstream 5xx or connection error |
 | `RECOVER_WAIT` | `180` | seconds to wait for Ollama to come back before a retry |
 | `LOAD_POLL` | `5` | seconds between checks while llama.cpp is loading a model |
@@ -263,6 +268,9 @@ Without an Ollama upstream, tags and ps list only llama.cpp models, and other Ol
 | `GET /_status.json` | the same data as JSON |
 | `GET /_queue` | queue state and counters |
 | `POST /_unload?model=…` | ask Ollama to unload a model |
+| `GET /models`, `GET /v1/models` | routed models under the names clients ask for |
+| `GET /api/version` | `OLLAMA_COMPAT` |
+| `POST /api/show` | a minimal model entry for a routed model |
 
 ### Run data
 
