@@ -624,6 +624,19 @@ class H(BaseHTTPRequestHandler):
                 "status": r.status, "tokens_in": j.get("usage", {}).get("prompt_tokens")})
         return self._send_json(200, {"model": model, "embeddings": vecs})
 
+    def _models(self):
+        """Model list for OpenAI-style clients, with ids renamed to the names clients ask for: the
+        router calls its model qwen36-35b, everything else here knows it as qwen3.6:35b."""
+        try:
+            c, r = llama_upstream("GET", "/v1/models", None, {}, 10)
+            d = json.loads(r.read() or b"{}"); c.close()
+        except Exception as e:
+            return self._send_json(502, {"error": f"gateway: model list unavailable: {e}"})
+        back = {v: k for k, v in ROUTES.items()}
+        for m in d.get("data") or []:
+            m["id"] = back.get(m.get("id"), m.get("id"))
+        return self._send_json(200, d)
+
     def _llama_models(self):
         try:
             c, r = llama_upstream("GET", "/v1/models", None, {}, 30)
@@ -695,6 +708,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send_json(200, self._merged_tags() if self.path == "/api/tags" else self._merged_ps())
             except Exception as e:
                 return self._send_json(502, {"error": f"gateway merge: {e}"})
+        if self.path in ("/models", "/v1/models") and LLAMA.hostname:
+            return self._models()
         if not self.path.startswith(GPU):
             if not UP.hostname:
                 return self._send_json(503, {"error": "gateway: no Ollama upstream configured"})

@@ -322,6 +322,14 @@ class LlamaRouteCase(unittest.TestCase):
             time.sleep(0.1)
         self.assertTrue(rows and rows[-1][1], "no empty run row with a note")
 
+    def test_model_list_uses_client_names(self):
+        for path in ("/models", "/v1/models"):
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.gw_port}{path}", timeout=10) as r:
+                d = json.load(r)
+            ids = [m["id"] for m in d["data"]]
+            self.assertIn("qwen3.6:35b", ids, path)     # qwen36-35b renamed back
+            self.assertNotIn("qwen36-35b", ids, path)
+
     def test_embed_is_translated_to_openai_shape(self):
         req = urllib.request.Request(f"http://127.0.0.1:{self.gw_port}/api/embed",
                                      data=json.dumps({"model": "embeddinggemma", "input": "hello"}).encode(),
